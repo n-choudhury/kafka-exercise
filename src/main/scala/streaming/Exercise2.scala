@@ -1,9 +1,12 @@
 package streaming
 
+import akka.Done
 import akka.actor.ActorSystem
-import akka.kafka.{ConsumerSettings, ProducerMessage, ProducerSettings, Subscriptions}
-import akka.kafka.scaladsl.{Consumer, Producer}
-import akka.stream.scaladsl.{Sink, Source}
+import akka.kafka.Metadata.CommittedOffset
+import akka.kafka.scaladsl.Consumer.DrainingControl
+import akka.kafka.{CommitterSettings, ConsumerSettings, ProducerMessage, ProducerSettings, Subscriptions}
+import akka.kafka.scaladsl.{Committer, Consumer, Producer}
+import akka.stream.scaladsl.{Keep, Sink, Source}
 import config.Meta.{kafkaBootStrapServers, kafkaConsumerGroup, kafkaTopic}
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.producer.ProducerRecord
@@ -12,8 +15,8 @@ import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializ
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
+object Exercise2 {
 
-object Exercise1 {
   implicit val actorSystem: ActorSystem = ActorSystem("KafkaToElasticSearch")
   implicit val executionContext: ExecutionContext = actorSystem.dispatcher
 
@@ -23,42 +26,34 @@ object Exercise1 {
   val kafkaProducerSettings = ProducerSettings(actorSystem, new StringSerializer, new StringSerializer)
     .withBootstrapServers(kafkaBootStrapServers)
 
-  def readFromKafka(topic: String) = {
+
+  def readFromKafkaToKafka(topic: String) = {
     val kafkaConsumerSettings: ConsumerSettings[String, String] = ConsumerSettings(actorSystem, stringDeserializer, stringDeserializer)
       .withBootstrapServers(kafkaBootStrapServers)
       .withGroupId(kafkaConsumerGroup)
       .withProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
       .withStopTimeout(0.seconds)
 
-    val control /*: Consumer.DrainingControl[Done] */ = Consumer
+    val control = Consumer
       .committableSource(kafkaConsumerSettings, Subscriptions.topics(topic))
-      .map { consumerMssg =>
-        val mssgVal = consumerMssg.record.value()
-        println(s"Received Message: $mssgVal on topic: $topic")
-        val newTopic = mssgVal.replace(' ', '-')
-        val newMessage = mssgVal.toUpperCase
-        ProducerMessage.single(
-          new ProducerRecord(newTopic, consumerMssg.record.key(), newMessage),
-          passThrough = consumerMssg.committableOffset)
+      .map { consumerRecord =>
+        val key = consumerRecord.record.key()
+        val messageVal = consumerRecord.record.value()
+        val producerRecords = messageVal.split("\\s").filterNot(_ == "").map(_ -> 1).groupBy(_._1).map { pair =>
+          val newTopic = messageVal.replace(' ', '-')
+          val mssg: String = s"(${pair._1}, ${pair._2.length})"
+          new ProducerRecord[String, String](newTopic, key, mssg)
+        }.toSeq
+        ProducerMessage.multi(producerRecords, consumerRecord.committableOffset)
       }
       .via(Producer.flexiFlow(kafkaProducerSettings))
       .map(_.passThrough)
-      .runWith(Sink.ignore)
-
-    control.onComplete {
-      case Success(_) =>
-        println("Successfully terminated consumer")
-        actorSystem.terminate()
-
-      case Failure(err) =>
-        println(err.getMessage)
-        actorSystem.terminate()
-    }
+      .toMat(Committer.sink(CommitterSettings(actorSystem)))(Keep.both)
+      .run()
   }
-
 
   def main(args: Array[String]): Unit = {
     val topic = if (args.length == 0) kafkaTopic else args(0)
-    readFromKafka(topic)
+    readFromKafkaToKafka(topic)
   }
 }
