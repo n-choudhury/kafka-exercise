@@ -1,6 +1,6 @@
 package example.kafka
 
-import config.Meta.{bootStrapServers, kafkaTopic}
+import config.Meta.{kafkaBootStrapServers, kafkaTopic}
 import org.apache.kafka.clients.consumer.KafkaConsumer
 
 import java.time.Duration
@@ -10,7 +10,7 @@ import scala.jdk.CollectionConverters.IterableHasAsScala
 object MessageConsumer {
 
   val props = new Properties()
-  props.put("bootstrap.servers", bootStrapServers)
+  props.put("bootstrap.servers", kafkaBootStrapServers)
   props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
   props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer")
   props.put("auto.offset.reset", "latest")

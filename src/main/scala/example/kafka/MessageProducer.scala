@@ -1,6 +1,6 @@
 package example.kafka
 
-import config.Meta.{bootStrapServers, kafkaTopic}
+import config.Meta.{kafkaBootStrapServers, kafkaTopic}
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 
 import java.time.LocalDateTime
@@ -16,7 +16,7 @@ object MessageProducer {
   def publishToKafka(topic: String, messageStr: String) = {
     val properties = new Properties()
 
-    properties.put("bootstrap.servers", bootStrapServers)
+    properties.put("bootstrap.servers", kafkaBootStrapServers)
     properties.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer")
     properties.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer")
     val producer = new KafkaProducer[String, String](properties)
